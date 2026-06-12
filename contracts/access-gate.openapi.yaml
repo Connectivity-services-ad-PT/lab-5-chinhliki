@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: Smart Campus — Access Gate Service
+  version: 1.0.0
+  description: |
+    API Contract-First của dịch vụ Quản lý Cổng ra vào (Nhóm B3 - Product B).
+    Hợp đồng này định nghĩa các API quản lý, kiểm tra trạng thái thiết bị vật lý chốt chặn bảo mật
+    và tiếp nhận lệnh điều khiển hạ tầng từ Core Business Service (B6) gửi xuống.
+  contact:
+    name: Nguyễn Hữu Bảo (Group 3B Lead)
+    email: nguyenbaoit@gmail.com
+
+servers:
+  - url: http://localhost:4011
+    description: Prism Mock Server dùng cho Lab 02
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Hệ thống
+    description: Các endpoint kiểm tra trạng thái và vận hành hệ thống hạ tầng.
+  - name: Vận hành Cổng vật lý
+    description: API điều khiển phần cứng chốt cửa và quét trạng thái cổng an ninh từ xa.
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra trạng thái hoạt động của dịch vụ Access Gate
+      description: Kiểm tra xem Access Gate Service có đang sẵn sàng kết nối với phần cứng cửa vật lý và mạng trung tâm không.
+      operationId: checkB3Health
+      tags:
+        - Hệ thống
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường, kết nối phần cứng an toàn.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - timestamp
+                  - gate_controller_connected
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [UP, DOWN, DEGRADED]
+                    examples: ["UP"]
+                  timestamp:
+                    type: string
+                    format: date-time
+                    examples: ["2026-05-22T14:15:00Z"]
+                  gate_controller_connected:
+                    type: boolean
+                    examples: [true]
+        '503':
+          description: Lỗi hệ thống hạ tầng hoặc mất kết nối thiết bị ngoại vi.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/gates/{id}:
+    get:
+      summary: Lấy trạng thái vật lý hiện tại của một cổng an ninh cụ thể
+      description: Được gọi bởi Core Business (B6) để kiểm định thực địa trước khi áp dụng luật hoặc hiển thị Dashboard giám sát.
+      operationId: getGateStatus
+      tags:
+        - Vận hành Cổng vật lý
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Mã định danh duy nhất dạng chuỗi của cổng vật lý cần kiểm tra
+          schema:
+            type: string
+            pattern: '^gate-[a-z0-9\-]+$'
+            examples: ["gate-block-d-01"]
+      responses:
+        '200':
+          description: Trả về thông tin chi tiết cấu hình và trạng thái chốt cửa.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - gate_id
+                  - status
+                  - last_sync
+                additionalProperties: false
+                properties:
+                  gate_id:
+                    type: string
+                    pattern: '^gate-[a-z0-9\-]+$'
+                    examples: ["gate-block-d-01"]
+                  status:
+                    type: string
+                    enum: [OPEN, CLOSED, LOCKED]
+                    examples: ["OPEN"]
+                  location:
+                    type: string
+                    examples: ["Sảnh chính Block D - Đại học Đại Nam"]
+                  last_sync:
+                    type: string
+                    format: date-time
+                    examples: ["2026-05-22T14:10:00Z"]
+        '401':
+          description: Thiếu mã xác thực (Bearer Token) hoặc cấu hình Gateway không hợp lệ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Mã định danh cổng an ninh không tồn tại trong hệ thống Smart Campus.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/gates/{id}/commands:
+    post:
+      summary: Tiếp nhận lệnh điều khiển ghi đè rơ-le phần cứng chốt cửa từ xa
+      description: Core Business (B6) phát lệnh phong tỏa khẩn cấp hoặc xả cửa tự do khi xảy ra các sự cố an ninh hoặc cảnh báo nguy hiểm nguy kịch.
+      operationId: controlGateHardware
+      tags:
+        - Vận hành Cổng vật lý
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^gate-[a-z0-9\-]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - command
+                - reason
+              additionalProperties: false
+              properties:
+                command:
+                  type: string
+                  enum: [LOCK, UNLOCK, FORCE_CLOSE]
+                  examples: ["LOCK"]
+                reason:
+                  type: string
+                  minLength: 5
+                  examples: ["Phát hiện đối tượng nằm trong danh sách đen cố tình đột nhập vào khu vực phòng máy chủ."]
+                requested_by:
+                  type: string
+                  examples: ["core-engine-agent-01"]
+      responses:
+        '200':
+          description: Lệnh điều khiển phần cứng đã được rơ-le cơ học của cổng thực thi thành công.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - gate_id
+                  - command
+                  - executed_at
+                  - success
+                additionalProperties: false
+                properties:
+                  gate_id:
+                    type: string
+                    examples: ["gate-block-d-01"]
+                  command:
+                    type: string
+                    examples: ["LOCK"]
+                  executed_at:
+                    type: string
+                    format: date-time
+                    examples: ["2026-05-22T14:16:02Z"]
+                  success:
+                    type: boolean
+                    examples: [true]
+        '400':
+          description: Dữ liệu payload sai định dạng JSON hoặc thiếu trường bắt buộc.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Yêu cầu không được xác thực, token hết hạn hoặc sai chữ ký.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Xung đột trạng thái vật lý thực địa (Ví dụ rơ-le kẹt cơ học, cảm biến báo chốt cửa không sập được).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Vi phạm quy định an toàn (Ví dụ hệ thống báo cháy đang kích hoạt không cho phép ép khóa cứng cửa thoát hiểm).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Sử dụng mã Token JWT của Smart Campus hệ thống cấp để xác thực quyền điều khiển phần cứng.
+  schemas:
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          format: uri
+          examples: ["https://smartcampus.dnu.edu.vn/probs/gate-hardware-error"]
+        title:
+          type: string
+          examples: ["Hardware Command Conflict"]
+        status:
+          type: integer
+          examples: [409]
+        detail:
+          type: string
+          examples: ["Không thể kích hoạt lệnh LOCK từ xa do cảm biến hồng ngoại báo chốt cửa vật lý đang bị kẹt cơ học."]
+        instance:
+          type: [string, "null"]
+          format: uri
+          examples: ["/api/v1/gates/gate-block-d-01/commands"]
