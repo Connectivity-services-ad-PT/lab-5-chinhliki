@@ -24,7 +24,9 @@ jobs:
           node-version: '20'
 
       - name: Install Newman + HTML reporter
-        run: npm install -g newman newman-reporter-htmlextra
+        run: |
+          npm install -g newman newman-reporter-htmlextra
+          npm install
 
       # 3. Tạo .env từ .env.example (không dùng secret thật)
       - name: Create .env from example
@@ -67,6 +69,11 @@ jobs:
         run: |
           set -a; source .env; set +a
           docker compose exec -T db pg_isready -U "$POSTGRES_USER"
+
+      - name: Start Mock Access Gate (Prism)
+        run: |
+          npm run mock:gate &
+          sleep 5
 
       # 7. Chạy Newman test nếu có collection
       - name: Run Newman collection
