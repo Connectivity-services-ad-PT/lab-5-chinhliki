@@ -34,6 +34,9 @@ jobs:
       - name: Lint docker-compose.yml
         run: docker compose config --quiet
 
+      - name: Create external network class-net
+        run: docker network create class-net || true
+
       # 5. Build & start stack, đợi healthcheck pass (--wait)
       - name: Build and start Compose stack
         run: docker compose up -d --build --wait
