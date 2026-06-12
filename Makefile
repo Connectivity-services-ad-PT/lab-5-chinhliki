@@ -1,4 +1,4 @@
-.PHONY: install lint build run compose-up compose-down logs test-compose
+.PHONY: install lint build run compose-up compose-down logs test-compose up down ps
 
 # Install Node dependencies for Prism/Spectral/Newman
 install:
@@ -25,6 +25,13 @@ compose-down:
 
 logs:
 	docker compose logs -f
+
+up: compose-up
+
+down: compose-down
+
+ps:
+	docker compose ps
 
 # Run Newman tests on compose stack
 test-compose:
